@@ -42,15 +42,29 @@ app.use('/uploads', express.static('uploads'));
 // Socket.IO Connection Handler
 const Message = require('./models/Message');
 const Connection = require('./models/Connection');
+const User = require('./models/User');
 
 // Socket.IO Connection Handler
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  // Register user with their phone number
+  // Helper to store phone on socket for disconnect handling
   socket.on("register", (phone) => {
+    socket.userPhone = phone; // Store for disconnect
+  });
+
+  // Register user with their phone number
+  socket.on("register", async (phone) => {
     socket.join(phone);
     console.log(`User registered with phone: ${phone} (Socket ID: ${socket.id})`);
+
+    // Update user status to online
+    try {
+      await User.findOneAndUpdate({ phone }, { isOnline: true });
+      io.emit("user_status_change", { phone, isOnline: true });
+    } catch (error) {
+      console.error("Error updating user status:", error);
+    }
   });
 
   // Handle connection response
@@ -171,8 +185,26 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     console.log("User disconnected", socket.id);
+
+    // We need to find which user disconnected. 
+    // Since we don't store socketId -> user mapping in memory efficiently here,
+    // we might need to rely on the fact that 'register' joined a room named `phone`.
+    // BUT, socket.rooms is cleared on disconnect.
+    // A better approach for this simple app is to store the phone in the socket object on register.
+
+    if (socket.userPhone) {
+      const phone = socket.userPhone;
+      const lastSeen = new Date();
+      try {
+        await User.findOneAndUpdate({ phone }, { isOnline: false, lastSeen });
+        io.emit("user_status_change", { phone, isOnline: false, lastSeen });
+        console.log(`User ${phone} marked offline`);
+      } catch (error) {
+        console.error("Error marking user offline:", error);
+      }
+    }
   });
 });
 
