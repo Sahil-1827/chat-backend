@@ -122,6 +122,10 @@ const updateProfile = async (req, res) => {
         if (name) user.name = name;
         if (about) user.about = about;
 
+        if (req.body.removeProfilePic === 'true' || req.body.removeProfilePic === true) {
+            user.profilePic = "";
+        }
+
         if (req.file) {
             // Cloudinary returns the full secure URL in path
             user.profilePic = req.file.path;

@@ -32,13 +32,16 @@ app.use(express.urlencoded({ extended: true }));
 
 const authRoutes = require("./routes/authRoutes");
 const messageRoutes = require("./routes/messageRoutes");
+const connectionRoutes = require('./routes/connectionRoutes');
 
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
+app.use('/api/connections', connectionRoutes);
 app.use('/uploads', express.static('uploads'));
 
 // Socket.IO Connection Handler
 const Message = require('./models/Message');
+const Connection = require('./models/Connection');
 
 // Socket.IO Connection Handler
 io.on("connection", (socket) => {
@@ -50,14 +53,86 @@ io.on("connection", (socket) => {
     console.log(`User registered with phone: ${phone} (Socket ID: ${socket.id})`);
   });
 
+  // Handle connection response
+  socket.on('respond_to_request', async ({ to, status, from }) => {
+    // from = responder (current user), to = requester
+    try {
+      const connection = await Connection.findOneAndUpdate(
+        { requester: to, recipient: from },
+        { status },
+        { new: true }
+      );
+
+      if (connection) {
+        // Notify requester
+        io.to(to).emit('request_response', { from, status });
+        // Notify responder (to update UI)
+        io.to(from).emit('request_response', { from: to, status }); // 'from' here essentially keys the chat
+      }
+    } catch (error) {
+      console.error("Error responding to request:", error);
+    }
+  });
+
   // Handle private messages
   socket.on("private_message", async ({ to, message, from }) => {
     console.log(`Message from ${from} to ${to}: ${message}`);
 
     try {
+      // Check Connection Status
+      let connection = await Connection.findOne({
+        $or: [
+          { requester: from, recipient: to },
+          { requester: to, recipient: from }
+        ]
+      });
+
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
 
-      // Save to Database
+      if (!connection) {
+        // First time interaction: Create Pending Connection
+        connection = await Connection.create({
+          requester: from,
+          recipient: to,
+          status: 'pending'
+        });
+
+        // Save Message
+        const newMessage = await Message.create({
+          sender: from,
+          recipient: to,
+          message,
+          time,
+          status: 'sent'
+        });
+
+        // Emit Connection Request to Recipient
+        io.to(to).emit("connection_request", {
+          _id: newMessage._id,
+          from,
+          message,
+          time,
+          status: 'sent',
+          connectionId: connection._id
+        });
+
+        // Emit Request Sent to Sender (to show "Waiting...")
+        io.to(from).emit("request_sent", { to });
+        return;
+      }
+
+      if (connection.status === 'pending') {
+        // If interaction exists but pending
+        io.to(from).emit("message_error", { to, error: "Wait for the user to accept your request." });
+        return;
+      }
+
+      if (connection.status === 'rejected') {
+        io.to(from).emit("message_error", { to, error: "You cannot message this user." });
+        return;
+      }
+
+      // If Accepted, proceed normally
       const newMessage = await Message.create({
         sender: from,
         recipient: to,
