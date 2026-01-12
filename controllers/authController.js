@@ -144,11 +144,62 @@ const updateProfile = async (req, res) => {
     }
 };
 
+const getAllUsers = async (req, res) => {
+    try {
+        const users = await User.find({ _id: { $ne: req.user.id } }).select("-password");
+        const myPhone = req.user.phone;
+        const Message = require('../models/Message'); // Import here to avoid circular dependency issues if any
+
+        // Enhance users with last message and unread count
+        const usersWithStats = await Promise.all(users.map(async (user) => {
+            const userObj = user.toObject();
+
+            // Find last message
+            const lastMsg = await Message.findOne({
+                $or: [
+                    { sender: myPhone, recipient: user.phone },
+                    { sender: user.phone, recipient: myPhone }
+                ]
+            }).sort({ createdAt: -1 });
+
+            // Count unread messages from this user
+            const unreadCount = await Message.countDocuments({
+                sender: user.phone,
+                recipient: myPhone,
+                status: { $ne: 'read' }
+            });
+
+            userObj.lastMessage = lastMsg ? {
+                text: lastMsg.message,
+                time: lastMsg.time,
+                timestamp: lastMsg.createdAt
+            } : null;
+
+            userObj.unreadCount = unreadCount;
+
+            return userObj;
+        }));
+
+        // Optional: Sort by last message timestamp (most recent first)
+        usersWithStats.sort((a, b) => {
+            const timeA = a.lastMessage ? new Date(a.lastMessage.timestamp) : 0;
+            const timeB = b.lastMessage ? new Date(b.lastMessage.timestamp) : 0;
+            return timeB - timeA;
+        });
+
+        res.json(usersWithStats);
+    } catch (error) {
+        console.error("Get all users error:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
 module.exports = {
     signup,
     login,
     verifyPhone,
     resetPassword,
     updateProfile,
-    getProfile
+    getProfile,
+    getAllUsers
 };
