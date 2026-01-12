@@ -89,9 +89,66 @@ const resetPassword = async (req, res) => {
     res.status(200).json({ message: "Password updated successfully" });
 };
 
+const getProfile = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (user) {
+            res.json({
+                _id: user.id,
+                name: user.name,
+                phone: user.phone,
+                about: user.about,
+                profilePic: user.profilePic,
+            });
+        } else {
+            res.status(404).json({ message: "User not found" });
+        }
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+const updateProfile = async (req, res) => {
+    try {
+        const { name, about } = req.body;
+        const userId = req.user.id; // From middleware/token
+
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        if (name) user.name = name;
+        if (about) user.about = about;
+
+        if (req.file) {
+            // Cloudinary returns the full secure URL in path
+            user.profilePic = req.file.path;
+        }
+
+        const updatedUser = await user.save();
+
+        res.json({
+            _id: updatedUser._id,
+            name: updatedUser.name,
+            phone: updatedUser.phone,
+            about: updatedUser.about,
+            profilePic: updatedUser.profilePic,
+            token: generateToken(updatedUser._id), // Optional: refresh token
+        });
+
+    } catch (error) {
+        console.error("Profile update error:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
 module.exports = {
     signup,
     login,
     verifyPhone,
-    resetPassword
+    resetPassword,
+    updateProfile,
+    getProfile
 };
