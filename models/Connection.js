@@ -7,7 +7,8 @@ const connectionSchema = new mongoose.Schema({
         type: String,
         enum: ['pending', 'accepted', 'rejected'],
         default: 'pending'
-    }
+    },
+    blockedBy: { type: String, default: null } // Phone number of user who blocked
 }, { timestamps: true });
 
 // Index for quicker lookups of the pair

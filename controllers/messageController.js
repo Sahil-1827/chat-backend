@@ -19,4 +19,25 @@ const getMessages = async (req, res) => {
     }
 };
 
-module.exports = { getMessages };
+
+const clearMessages = async (req, res) => {
+    try {
+        const { contactPhone } = req.params;
+        const myPhone = req.user.phone;
+
+        await Message.deleteMany({
+            $or: [
+                { sender: myPhone, recipient: contactPhone },
+                { sender: contactPhone, recipient: myPhone }
+            ]
+        });
+
+        res.json({ message: "Chat cleared successfully" });
+    } catch (error) {
+        console.error("Error clearing messages:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+module.exports = { getMessages, clearMessages };
+

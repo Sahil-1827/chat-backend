@@ -69,19 +69,33 @@ io.on("connection", (socket) => {
 
   // Handle connection response
   socket.on('respond_to_request', async ({ to, status, from }) => {
-    // from = responder (current user), to = requester
+    // from = responder (current user), to = requester/target
     try {
+      // Find existing connection regardless of direction
+      let updateFields = { status };
+
+      if (status === 'rejected') {
+        updateFields.blockedBy = from;
+      } else if (status === 'accepted') {
+        updateFields.blockedBy = null;
+      }
+
       const connection = await Connection.findOneAndUpdate(
-        { requester: to, recipient: from },
-        { status },
+        {
+          $or: [
+            { requester: to, recipient: from },
+            { requester: from, recipient: to }
+          ]
+        },
+        updateFields,
         { new: true }
       );
 
       if (connection) {
-        // Notify requester
-        io.to(to).emit('request_response', { from, status });
-        // Notify responder (to update UI)
-        io.to(from).emit('request_response', { from: to, status }); // 'from' here essentially keys the chat
+        // Notify target (to)
+        io.to(to).emit('request_response', { from, status, blockedBy: connection.blockedBy });
+        // Notify responder (from)
+        io.to(from).emit('request_response', { from: to, status, blockedBy: connection.blockedBy });
       }
     } catch (error) {
       console.error("Error responding to request:", error);
