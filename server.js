@@ -168,6 +168,15 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Typing Indicators
+  socket.on("typing", ({ to, from }) => {
+    io.to(to).emit("typing", { from });
+  });
+
+  socket.on("stop_typing", ({ to, from }) => {
+    io.to(to).emit("stop_typing", { from });
+  });
+
   socket.on('mark_as_read', async (data) => {
     // data: { to: 'senderPhone', from: 'readerPhone' }
     console.log(`Messages read by ${data.from} for ${data.to}`);
