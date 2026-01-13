@@ -211,14 +211,16 @@ io.on("connection", (socket) => {
   socket.on("disconnect", async () => {
     console.log("User disconnected", socket.id);
 
-    // We need to find which user disconnected. 
-    // Since we don't store socketId -> user mapping in memory efficiently here,
-    // we might need to rely on the fact that 'register' joined a room named `phone`.
-    // BUT, socket.rooms is cleared on disconnect.
-    // A better approach for this simple app is to store the phone in the socket object on register.
-
     if (socket.userPhone) {
       const phone = socket.userPhone;
+
+      // Critical Change: Check if there are other sockets for this user in the room
+      const sockets = await io.in(phone).fetchSockets();
+      if (sockets.length > 0) {
+        console.log(`User ${phone} still has active connections. Not marking offline.`);
+        return;
+      }
+
       const lastSeen = new Date();
       try {
         await User.findOneAndUpdate({ phone }, { isOnline: false, lastSeen });
